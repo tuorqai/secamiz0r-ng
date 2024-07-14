@@ -206,8 +206,9 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
         if (noise > 0) {
             y_even += r_even % noise;
             y_odd += r_odd % noise;
-            u += r_odd % noise;
-            v += r_even % noise;
+
+            u += (int) (u * 2.f * (noise / 256.f)) + (r_odd % noise);
+            v += (int) (v * 2.f * (noise / 256.f)) + (r_even % noise);
         }
 
         if (echo >= 1 && i >= echo) {
