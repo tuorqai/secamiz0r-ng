@@ -179,9 +179,22 @@ static void copy_pair_as_yuv(struct secamiz0r *self, uint8_t *dst_even, uint8_t 
     }
 }
 
+static int juice(int j)
+{
+    j ^= j << 13;
+    j ^= j >> 17;
+    j ^= j << 5;
+
+    return j;
+}
+
 static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
+    int const noise = (int) (self->intensity * 256.f);
     int const echo = (int) (self->intensity * 8.f);
+
+    int r_even = rand();
+    int r_odd = rand();
 
     for (size_t i = 0; i < self->width; i++) {
         int y_even = even[i * 4 + 0];
@@ -189,6 +202,13 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 
         int u = (int) odd[i * 4 + 1] - 128;
         int v = (int) even[i * 4 + 1] - 128;
+
+        if (noise > 0) {
+            y_even += r_even % noise;
+            y_odd += r_odd % noise;
+            u += r_odd % noise;
+            v += r_even % noise;
+        }
 
         if (echo >= 1 && i >= echo) {
             y_even += (y_even - even[(i - echo) * 4]) / 2;
@@ -200,6 +220,9 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 
         odd[i * 4 + 0] = clamp_byte(y_odd);
         odd[i * 4 + 1] = clamp_byte(u + 128);
+
+        r_even = juice(r_even);
+        r_odd = juice(r_odd);
     }
 }
 
