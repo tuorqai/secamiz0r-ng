@@ -6,6 +6,7 @@ struct secamiz0r
 {
     unsigned int width;
     unsigned int height;
+    double intensity;
 };
 
 int f0r_init()
@@ -53,6 +54,7 @@ f0r_instance_t f0r_construct(unsigned int width, unsigned int height)
 
     self->width = width;
     self->height = height;
+    self->intensity = 0.125f;
 
     return self;
 }
@@ -64,12 +66,28 @@ void f0r_destruct(f0r_instance_t instance)
 
 void f0r_set_param_value(f0r_instance_t instance, f0r_param_t param, int index)
 {
+    struct secamiz0r *self = instance;
 
+    switch (index) {
+    case 0:
+        self->intensity = *((double const *) param);
+        break;
+    default:
+        break;
+    }
 }
 
 void f0r_get_param_value(f0r_instance_t instance, f0r_param_t param, int index)
 {
     struct secamiz0r *self = instance;
+
+    switch (index) {
+    case 0:
+        *((double *) param) = self->intensity;
+        break;
+    default:
+        break;
+    }
 }
 
 static void unpack_rgb(float *rgb, uint8_t const *src)
@@ -161,6 +179,30 @@ static void copy_pair_as_yuv(struct secamiz0r *self, uint8_t *dst_even, uint8_t 
     }
 }
 
+static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
+{
+    int const echo = (int) (self->intensity * 8.f);
+
+    for (size_t i = 0; i < self->width; i++) {
+        int y_even = even[i * 4 + 0];
+        int y_odd = odd[i * 4 + 0];
+
+        int u = (int) odd[i * 4 + 1] - 128;
+        int v = (int) even[i * 4 + 1] - 128;
+
+        if (echo >= 1 && i >= echo) {
+            y_even += (y_even - even[(i - echo) * 4]) / 2;
+            y_odd += (y_odd - odd[(i - echo) * 4]) / 2;
+        }
+
+        even[i * 4 + 0] = clamp_byte(y_even);
+        even[i * 4 + 1] = clamp_byte(v + 128);
+
+        odd[i * 4 + 0] = clamp_byte(y_odd);
+        odd[i * 4 + 1] = clamp_byte(u + 128);
+    }
+}
+
 static void convert_pair_to_rgb(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
     int const luma_loss = 4;
@@ -209,6 +251,7 @@ void f0r_update(f0r_instance_t instance, double time, uint32_t const* src, uint3
         uint8_t *dst_odd = (uint8_t *) &dst[odd];
 
         copy_pair_as_yuv(self, dst_even, dst_odd, src_even, src_odd);
+        filter_pair(self, dst_even, dst_odd);
         convert_pair_to_rgb(self, dst_even, dst_odd);
     }
 }
