@@ -192,21 +192,10 @@ static int juice(int j)
     return j;
 }
 
-static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
+static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
-    int const noise = (int) (self->intensity * 256.f);
-    int const echo = (int) (self->intensity * 8.f);
-
     int r_even = rand();
     int r_odd = rand();
-
-    int u_fire = 0;
-    int u_fire_sign = 0;
-
-    int v_fire = 0;
-    int v_fire_sign = 0;
-
-    int const fire_fade = 1;
 
     int y_even_prev = 0;
     int y_odd_prev = 0;
@@ -266,6 +255,25 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
         y_even_delta_counter++;
         y_odd_delta_counter++;
     }
+}
+
+static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
+{
+    prefilter_pair(self, even, odd);
+
+    int const noise = (int) (self->intensity * 256.f);
+    int const echo = (int) (self->intensity * 8.f);
+
+    int r_even = rand();
+    int r_odd = rand();
+
+    int u_fire = 0;
+    int u_fire_sign = 0;
+
+    int v_fire = 0;
+    int v_fire_sign = 0;
+
+    int const fire_fade = 1;
 
     for (size_t i = 0; i < self->width; i++) {
         int y_even = even[i * 4 + 0];
