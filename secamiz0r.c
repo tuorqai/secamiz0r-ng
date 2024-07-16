@@ -163,18 +163,22 @@ static void copy_pair_as_yuv(struct secamiz0r *self, uint8_t *dst_even, uint8_t 
 
         dst_even[(i + 0) * 4 + 0] = y0_even;
         dst_even[(i + 0) * 4 + 1] = v;
+        dst_even[(i + 0) * 4 + 2] = 0;
         dst_even[(i + 0) * 4 + 3] = src_even[(i + 0) * 4 + 3];
 
         dst_even[(i + 1) * 4 + 0] = y1_even;
         dst_even[(i + 1) * 4 + 1] = v;
+        dst_even[(i + 1) * 4 + 2] = 0;
         dst_even[(i + 1) * 4 + 3] = src_even[(i + 1) * 4 + 3];
 
         dst_odd[(i + 0) * 4 + 0] = y0_odd;
         dst_odd[(i + 0) * 4 + 1] = u;
+        dst_odd[(i + 0) * 4 + 2] = 0;
         dst_odd[(i + 0) * 4 + 3] = src_odd[(i + 0) * 4 + 3];
 
         dst_odd[(i + 1) * 4 + 0] = y1_odd;
         dst_odd[(i + 1) * 4 + 1] = u;
+        dst_odd[(i + 1) * 4 + 2] = 0;
         dst_odd[(i + 1) * 4 + 3] = src_odd[(i + 1) * 4 + 3];
     }
 }
@@ -196,12 +200,106 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
     int r_even = rand();
     int r_odd = rand();
 
+    int u_fire = 0;
+    int u_fire_sign = 0;
+
+    int v_fire = 0;
+    int v_fire_sign = 0;
+
+    int const fire_fade = 1;
+
+    int y_even_prev = 0;
+    int y_odd_prev = 0;
+
+    int y_even_delta_counter = 0;
+    int y_odd_delta_counter = 0;
+
+    int y_even_delta_accum = 0;
+    int y_odd_delta_accum = 0;
+
+    for (int64_t i = self->width - 1; i >= 0; i--) {
+        int y_even = even[i * 4 + 0];
+        int y_odd = odd[i * 4 + 0];
+
+        y_even_delta_accum += abs(y_even - y_even_prev);
+        y_odd_delta_accum += abs(y_odd - y_odd_prev);
+
+        if (y_even_delta_accum > 256) {
+            if (y_even_delta_counter < 16) {
+                if ((r_even % 16) == 0) {
+                    even[i * 4 + 2] = (uint8_t) (r_even) % 64;
+                }
+            }
+
+            y_even_delta_counter = 0;
+            y_even_delta_accum = 0;
+        }
+
+        if (y_odd_delta_accum > 256) {
+            if (y_odd_delta_counter < 16) {
+                if ((r_odd % 16) == 0) {
+                    odd[i * 4 + 2] = (uint8_t) (r_odd) % 64;
+                }
+            }
+
+            y_odd_delta_counter = 0;
+            y_odd_delta_accum = 0;
+        }
+
+        int u_noise_fire = ((r_odd % 4096) == 0);
+        int v_noise_fire = ((r_even % 4096) == 0);
+
+        if (u_noise_fire) {
+            odd[i * 4 + 2] = (uint8_t) (r_even) % 64;
+        }
+
+        if (v_noise_fire) {
+            even[i * 4 + 2] = (uint8_t) (r_odd) % 64;
+        }
+
+        r_even = juice(r_even);
+        r_odd = juice(r_odd);
+
+        y_even_prev = y_even;
+        y_odd_prev = y_odd;
+
+        y_even_delta_counter++;
+        y_odd_delta_counter++;
+    }
+
     for (size_t i = 0; i < self->width; i++) {
         int y_even = even[i * 4 + 0];
         int y_odd = odd[i * 4 + 0];
 
         int u = (int) odd[i * 4 + 1] - 128;
         int v = (int) even[i * 4 + 1] - 128;
+
+        int z_even = even[i * 4 + 2];
+        int z_odd = odd[i * 4 + 2];
+
+        if (u_fire > 0) {
+            u += u_fire * u_fire_sign;
+            u_fire -= fire_fade;
+        }
+
+        if (v_fire > 0) {
+            v += v_fire * v_fire_sign;
+            v_fire -= fire_fade;
+        }
+
+        if (z_odd > 0) {
+            if (u_fire <= 0) {
+                u_fire_sign = (u > 0 && y_odd < 64) ? -1 : +1;
+            }
+            u_fire = 64 + z_odd;
+        }
+
+        if (z_even > 0) {
+            if (v_fire <= 0) {
+                v_fire_sign = (v > 0 && y_even < 64) ? -1 : +1;
+            }
+            v_fire = 64 + z_even;
+        }
 
         if (noise > 0) {
             y_even += r_even % noise;
