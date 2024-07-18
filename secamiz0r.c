@@ -10,7 +10,9 @@ struct secamiz0r
     unsigned int width;
     unsigned int height;
     size_t frame_count;
-    double intensity;
+
+    double fire_intensity;
+    double noise_intensity;
 };
 
 int f0r_init()
@@ -31,7 +33,7 @@ void f0r_get_plugin_info(f0r_plugin_info_t *info)
     info->frei0r_version = FREI0R_MAJOR_VERSION;
     info->major_version = 1;
     info->minor_version = 0;
-    info->num_params = 1;
+    info->num_params = 2;
     info->explanation = "SECAM Fire effect";
 }
 
@@ -39,7 +41,12 @@ void f0r_get_param_info(f0r_param_info_t *info, int index)
 {
     switch (index) {
     case 0:
-        info->name = "Intensity";
+        info->name = "Fire intensity";
+        info->explanation = NULL;
+        info->type = F0R_PARAM_DOUBLE;
+        break;
+    case 1:
+        info->name = "Noise intensity";
         info->explanation = NULL;
         info->type = F0R_PARAM_DOUBLE;
         break;
@@ -59,7 +66,8 @@ f0r_instance_t f0r_construct(unsigned int width, unsigned int height)
     self->width = width;
     self->height = height;
     self->frame_count = 0;
-    self->intensity = 0.125f;
+    self->fire_intensity = 0.125;
+    self->noise_intensity = 0.125;
 
     return self;
 }
@@ -75,7 +83,10 @@ void f0r_set_param_value(f0r_instance_t instance, f0r_param_t param, int index)
 
     switch (index) {
     case 0:
-        self->intensity = *((double const *) param);
+        self->fire_intensity = *((double const *) param);
+        break;
+    case 1:
+        self->noise_intensity = *((double const *) param);
         break;
     default:
         break;
@@ -88,7 +99,10 @@ void f0r_get_param_value(f0r_instance_t instance, f0r_param_t param, int index)
 
     switch (index) {
     case 0:
-        *((double *) param) = self->intensity;
+        *((double *) param) = self->fire_intensity;
+        break;
+    case 1:
+        *((double *) param) = self->noise_intensity;
         break;
     default:
         break;
@@ -204,7 +218,7 @@ static unsigned int umod(int a, int b)
 
 static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
-    int const oscillation_threshold = 1024 - (int) (self->intensity * 256.0);
+    int const threshold = 1024 - (int) (self->fire_intensity * self->fire_intensity * 256.0);
 
     int r_even = rand();
     int r_odd = rand();
@@ -225,11 +239,11 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
         y_even_oscillation += abs(y_even - y_even_prev - umod(r_even, 512));
         y_odd_oscillation += abs(y_odd - y_odd_prev - umod(r_odd, 512));
 
-        if (y_even_oscillation > oscillation_threshold) {
+        if (y_even_oscillation > threshold) {
             even[i * 4 + 2] = umod(r_even, 80);
         }
 
-        if (y_odd_oscillation > oscillation_threshold) {
+        if (y_odd_oscillation > threshold) {
             odd[i * 4 + 2] = umod(r_odd, 80);
         }
 
@@ -248,8 +262,9 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
     prefilter_pair(self, even, odd);
 
-    int const noise = (int) (self->intensity * self->intensity * 256.f);
-    int const echo = (int) (self->intensity * 8.f);
+    int const noise = clamp_int((int) (self->noise_intensity * self->noise_intensity * 256.0), 16, 224);
+    int const chroma_noise = noise * 2;
+    int const echo = clamp_int((int) (self->noise_intensity * 8.0), 2, 16);
 
     int r_even = rand();
     int r_odd = rand();
@@ -300,8 +315,8 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
             y_even += r_even % noise;
             y_odd += r_odd % noise;
 
-            u += (int) (u * 2.f * (noise / 256.f)) + (r_odd % noise);
-            v += (int) (v * 2.f * (noise / 256.f)) + (r_even % noise);
+            u += (int) (u * 2.f * (chroma_noise / 256.f)) + (r_odd % noise);
+            v += (int) (v * 2.f * (chroma_noise / 256.f)) + (r_even % noise);
         }
 
         if (echo >= 1 && i >= echo) {
