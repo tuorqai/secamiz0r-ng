@@ -204,20 +204,7 @@ static unsigned int umod(int a, int b)
 
 static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
-    int const oscillation_threshold = 600;
-    int const oscillation_period = 16;
-
-    int noise_fire_chance;
-
-    if (self->intensity > 0.75) {
-        noise_fire_chance = 4096.0 * (1.0 - self->intensity);
-    } else if (self->intensity > 0.5) {
-        noise_fire_chance = 16384.0 * (1.0 - self->intensity);
-    } else if (self->intensity > 0.25) {
-        noise_fire_chance = 262144.0 * (1.0 - self->intensity);
-    } else {
-        noise_fire_chance = INT_MAX;
-    }
+    int const oscillation_threshold = 1024 - (int) (self->intensity * 256.0);
 
     int r_even = rand();
     int r_odd = rand();
@@ -225,11 +212,8 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
     int y_even_prev = 0;// even[0];
     int y_odd_prev = 0;// odd[0];
 
-    int y_even_delta_counter = 0;
-    int y_odd_delta_counter = 0;
-
-    int y_even_delta_accum = 0;
-    int y_odd_delta_accum = 0;
+    int y_even_oscillation = 0;
+    int y_odd_oscillation = 0;
 
     for (int i = self->width - 1; i >= 0; i--) {
         int y_even = even[i * 4 + 0];
@@ -238,25 +222,15 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
         int u_fire = 0;
         int v_fire = 0;
 
-        y_even_delta_accum += abs(y_even - y_even_prev - umod(r_even, 64));
-        y_odd_delta_accum += abs(y_odd - y_odd_prev - umod(r_odd, 64));
+        y_even_oscillation += abs(y_even - y_even_prev - umod(r_even, 512));
+        y_odd_oscillation += abs(y_odd - y_odd_prev - umod(r_odd, 512));
 
-        if (y_even_delta_accum > oscillation_threshold) {
-            if (y_even_delta_counter < oscillation_period) {
-                even[i * 4 + 2] = umod(r_even, 80);
-            }
-
-            y_even_delta_counter = 0;
-            y_even_delta_accum = 0;
+        if (y_even_oscillation > oscillation_threshold) {
+            even[i * 4 + 2] = umod(r_even, 80);
         }
 
-        if (y_odd_delta_accum > oscillation_threshold) {
-            if (y_odd_delta_counter < oscillation_period) {
-                odd[i * 4 + 2] = umod(r_odd, 80);
-            }
-
-            y_odd_delta_counter = 0;
-            y_odd_delta_accum = 0;
+        if (y_odd_oscillation > oscillation_threshold) {
+            odd[i * 4 + 2] = umod(r_odd, 80);
         }
 
         r_even = juice(r_even);
@@ -265,8 +239,8 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
         y_even_prev = y_even;
         y_odd_prev = y_odd;
 
-        y_even_delta_counter++;
-        y_odd_delta_counter++;
+        y_even_oscillation /= 2;
+        y_odd_oscillation /= 2;
     }
 }
 
