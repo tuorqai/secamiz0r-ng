@@ -1,11 +1,15 @@
 
+#include <math.h>
 #include <stdlib.h>
 #include "frei0r.h"
+
+// #define ENABLE_TIME_TEST
 
 struct secamiz0r
 {
     unsigned int width;
     unsigned int height;
+    size_t frame_count;
     double intensity;
 };
 
@@ -54,6 +58,7 @@ f0r_instance_t f0r_construct(unsigned int width, unsigned int height)
 
     self->width = width;
     self->height = height;
+    self->frame_count = 0;
     self->intensity = 0.125f;
 
     return self;
@@ -192,13 +197,33 @@ static int juice(int j)
     return j;
 }
 
+static unsigned int umod(int a, int b)
+{
+    return ((a % b) + b) % b;
+}
+
 static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
+    int const oscillation_threshold = 600;
+    int const oscillation_period = 16;
+
+    int noise_fire_chance;
+
+    if (self->intensity > 0.75) {
+        noise_fire_chance = 4096.0 * (1.0 - self->intensity);
+    } else if (self->intensity > 0.5) {
+        noise_fire_chance = 16384.0 * (1.0 - self->intensity);
+    } else if (self->intensity > 0.25) {
+        noise_fire_chance = 262144.0 * (1.0 - self->intensity);
+    } else {
+        noise_fire_chance = INT_MAX;
+    }
+
     int r_even = rand();
     int r_odd = rand();
 
-    int y_even_prev = 0;
-    int y_odd_prev = 0;
+    int y_even_prev = 0;// even[0];
+    int y_odd_prev = 0;// odd[0];
 
     int y_even_delta_counter = 0;
     int y_odd_delta_counter = 0;
@@ -206,44 +231,32 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
     int y_even_delta_accum = 0;
     int y_odd_delta_accum = 0;
 
-    for (int64_t i = self->width - 1; i >= 0; i--) {
+    for (int i = self->width - 1; i >= 0; i--) {
         int y_even = even[i * 4 + 0];
         int y_odd = odd[i * 4 + 0];
 
-        y_even_delta_accum += abs(y_even - y_even_prev);
-        y_odd_delta_accum += abs(y_odd - y_odd_prev);
+        int u_fire = 0;
+        int v_fire = 0;
 
-        if (y_even_delta_accum > 256) {
-            if (y_even_delta_counter < 16) {
-                if ((r_even % 16) == 0) {
-                    even[i * 4 + 2] = (uint8_t) (r_even) % 64;
-                }
+        y_even_delta_accum += abs(y_even - y_even_prev - umod(r_even, 64));
+        y_odd_delta_accum += abs(y_odd - y_odd_prev - umod(r_odd, 64));
+
+        if (y_even_delta_accum > oscillation_threshold) {
+            if (y_even_delta_counter < oscillation_period) {
+                even[i * 4 + 2] = umod(r_even, 80);
             }
 
             y_even_delta_counter = 0;
             y_even_delta_accum = 0;
         }
 
-        if (y_odd_delta_accum > 256) {
-            if (y_odd_delta_counter < 16) {
-                if ((r_odd % 16) == 0) {
-                    odd[i * 4 + 2] = (uint8_t) (r_odd) % 64;
-                }
+        if (y_odd_delta_accum > oscillation_threshold) {
+            if (y_odd_delta_counter < oscillation_period) {
+                odd[i * 4 + 2] = umod(r_odd, 80);
             }
 
             y_odd_delta_counter = 0;
             y_odd_delta_accum = 0;
-        }
-
-        int u_noise_fire = ((r_odd % 4096) == 0);
-        int v_noise_fire = ((r_even % 4096) == 0);
-
-        if (u_noise_fire) {
-            odd[i * 4 + 2] = (uint8_t) (r_even) % 64;
-        }
-
-        if (v_noise_fire) {
-            even[i * 4 + 2] = (uint8_t) (r_odd) % 64;
         }
 
         r_even = juice(r_even);
@@ -261,7 +274,7 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
     prefilter_pair(self, even, odd);
 
-    int const noise = (int) (self->intensity * 256.f);
+    int const noise = (int) (self->intensity * self->intensity * 256.f);
     int const echo = (int) (self->intensity * 8.f);
 
     int r_even = rand();
@@ -299,14 +312,14 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
             if (u_fire <= 0) {
                 u_fire_sign = (u > 0 && y_odd < 64) ? -1 : +1;
             }
-            u_fire = 64 + z_odd;
+            u_fire = z_odd;
         }
 
         if (z_even > 0) {
             if (v_fire <= 0) {
                 v_fire_sign = (v > 0 && y_even < 64) ? -1 : +1;
             }
-            v_fire = 64 + z_even;
+            v_fire = z_even;
         }
 
         if (noise > 0) {
@@ -370,6 +383,11 @@ void f0r_update(f0r_instance_t instance, double time, uint32_t const* src, uint3
 {
     struct secamiz0r *self = instance;
 
+#ifdef ENABLE_TIME_TEST
+    double d = fmod(time, 10000.0) / 10000.0;
+    self->intensity = d;
+#endif
+
     for (size_t i = 0; i < self->height; i += 2) {
         size_t even = (i + 0) * self->width;
         size_t odd = (i + 1) * self->width;
@@ -384,4 +402,16 @@ void f0r_update(f0r_instance_t instance, double time, uint32_t const* src, uint3
         filter_pair(self, dst_even, dst_odd);
         convert_pair_to_rgb(self, dst_even, dst_odd);
     }
+
+#ifdef ENABLE_TIME_TEST
+    int w = (int) floor(d * self->width);
+    for (int x = 0; x < w; x++) {
+        dst[(self->height - 8) * self->width + x] = 0xffffffff;
+        for (size_t y = (self->height - 7); y < self->height; y++) {
+            dst[y * self->width + x] = 0xffff0000;
+        }
+    }
+#endif
+
+    self->frame_count++;
 }
