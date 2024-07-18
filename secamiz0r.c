@@ -12,7 +12,12 @@ struct secamiz0r
     size_t frame_count;
 
     double fire_intensity;
+    int fire_threshold;
+
     double noise_intensity;
+    int luma_noise;
+    int chroma_noise;
+    int echo_offset;
 };
 
 int f0r_init()
@@ -55,6 +60,27 @@ void f0r_get_param_info(f0r_param_info_t *info, int index)
     }
 }
 
+static int clamp_int(int value, int a, int b)
+{
+    return (value < a) ? a : ((value > b) ? b : value);
+}
+
+static void set_fire_intensity(struct secamiz0r *self, double fire_intensity)
+{
+    double const x = self->fire_intensity = fire_intensity;
+
+    self->fire_threshold = 1024 - (int) (x * x * 256.0);
+}
+
+static void set_noise_intensity(struct secamiz0r *self, double noise_intensity)
+{
+    double const x = self->noise_intensity = noise_intensity;
+
+    self->luma_noise = clamp_int((int) (x * x * 256.0), 16, 224);
+    self->chroma_noise = clamp_int((int) (x * 256.0), 32, 256);
+    self->echo_offset = clamp_int((int) (x * 8.0), 2, 16);
+}
+
 f0r_instance_t f0r_construct(unsigned int width, unsigned int height)
 {
     struct secamiz0r *self = malloc(sizeof(*self));
@@ -66,8 +92,9 @@ f0r_instance_t f0r_construct(unsigned int width, unsigned int height)
     self->width = width;
     self->height = height;
     self->frame_count = 0;
-    self->fire_intensity = 0.125;
-    self->noise_intensity = 0.125;
+
+    set_fire_intensity(self, 0.125);
+    set_noise_intensity(self, 0.125);
 
     return self;
 }
@@ -83,10 +110,10 @@ void f0r_set_param_value(f0r_instance_t instance, f0r_param_t param, int index)
 
     switch (index) {
     case 0:
-        self->fire_intensity = *((double const *) param);
+        set_fire_intensity(self, *((double const *) param));
         break;
     case 1:
-        self->noise_intensity = *((double const *) param);
+        set_noise_intensity(self, *((double const *) param));
         break;
     default:
         break;
@@ -129,11 +156,6 @@ static uint8_t u_from_rgb(float const *rgb)
 static uint8_t v_from_rgb(float const *rgb)
 {
     return (uint8_t) (128.0 + (112.439 * rgb[0]) - (94.1540 * rgb[1]) - (18.2850 * rgb[2]));
-}
-
-static int clamp_int(int value, int a, int b)
-{
-    return (value < a) ? a : ((value > b) ? b : value);
 }
 
 static uint8_t clamp_byte(int value)
@@ -218,13 +240,11 @@ static unsigned int umod(int a, int b)
 
 static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
-    int const threshold = 1024 - (int) (self->fire_intensity * self->fire_intensity * 256.0);
-
     int r_even = rand();
     int r_odd = rand();
 
-    int y_even_prev = 0;// even[0];
-    int y_odd_prev = 0;// odd[0];
+    int y_even_prev = even[0];
+    int y_odd_prev = odd[0];
 
     int y_even_oscillation = 0;
     int y_odd_oscillation = 0;
@@ -239,11 +259,11 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
         y_even_oscillation += abs(y_even - y_even_prev - umod(r_even, 512));
         y_odd_oscillation += abs(y_odd - y_odd_prev - umod(r_odd, 512));
 
-        if (y_even_oscillation > threshold) {
+        if (y_even_oscillation > self->fire_threshold) {
             even[i * 4 + 2] = umod(r_even, 80);
         }
 
-        if (y_odd_oscillation > threshold) {
+        if (y_odd_oscillation > self->fire_threshold) {
             odd[i * 4 + 2] = umod(r_odd, 80);
         }
 
@@ -261,10 +281,6 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
     prefilter_pair(self, even, odd);
-
-    int const noise = clamp_int((int) (self->noise_intensity * self->noise_intensity * 256.0), 16, 224);
-    int const chroma_noise = noise * 2;
-    int const echo = clamp_int((int) (self->noise_intensity * 8.0), 2, 16);
 
     int r_even = rand();
     int r_odd = rand();
@@ -311,17 +327,19 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
             v_fire = z_even;
         }
 
-        if (noise > 0) {
-            y_even += r_even % noise;
-            y_odd += r_odd % noise;
-
-            u += (int) (u * 2.f * (chroma_noise / 256.f)) + (r_odd % noise);
-            v += (int) (v * 2.f * (chroma_noise / 256.f)) + (r_even % noise);
+        if (self->luma_noise > 0) {
+            y_even += r_even % self->luma_noise;
+            y_odd += r_odd % self->luma_noise;
         }
 
-        if (echo >= 1 && i >= echo) {
-            y_even += (y_even - even[(i - echo) * 4]) / 2;
-            y_odd += (y_odd - odd[(i - echo) * 4]) / 2;
+        if (self->chroma_noise > 0) {
+            u += (int) (u * 2.f * (self->chroma_noise / 256.f)) + (r_odd % self->chroma_noise);
+            v += (int) (v * 2.f * (self->chroma_noise / 256.f)) + (r_even % self->chroma_noise);
+        }
+
+        if (self->echo_offset >= 1 && i >= self->echo_offset) {
+            y_even += (y_even - even[(i - self->echo_offset) * 4]) / 2;
+            y_odd += (y_odd - odd[(i - self->echo_offset) * 4]) / 2;
         }
 
         even[i * 4 + 0] = clamp_byte(y_even);
@@ -374,7 +392,8 @@ void f0r_update(f0r_instance_t instance, double time, uint32_t const* src, uint3
 
 #ifdef ENABLE_TIME_TEST
     double d = fmod(time, 10000.0) / 10000.0;
-    self->intensity = d;
+    set_fire_intensity(self, d);
+    set_noise_intensity(self, d);
 #endif
 
     for (size_t i = 0; i < self->height; i += 2) {
