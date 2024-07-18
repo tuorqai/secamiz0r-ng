@@ -243,8 +243,8 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
     int r_even = rand();
     int r_odd = rand();
 
-    int y_even_oscillation = 0;
-    int y_odd_oscillation = 0;
+    int y_even_oscillation = umod(r_even, (int) (self->fire_intensity * 1024.0));
+    int y_odd_oscillation = umod(r_odd, (int) (self->fire_intensity * 1024.0));
 
     for (size_t i = 1; i < self->width; i++) {
         y_even_oscillation += abs(even[i * 4 + 0] - even[i * 4 - 4] - umod(r_even, 512));
@@ -272,10 +272,10 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
     int r_odd = rand();
 
     int u_fire = 0;
-    int u_fire_sign = 0;
+    int u_fire_sign = 1;
 
     int v_fire = 0;
-    int v_fire_sign = 0;
+    int v_fire_sign = 1;
 
     int const fire_fade = 1;
 
@@ -300,16 +300,16 @@ static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
         }
 
         if (z_odd > 0) {
-            if (u_fire <= 0) {
-                u_fire_sign = (u > 0 && y_odd < 64) ? -1 : +1;
-            }
+            // if (u_fire <= 0) {
+            //     u_fire_sign = (u > 0 && y_odd < 64) ? -1 : +1;
+            // }
             u_fire = z_odd;
         }
 
         if (z_even > 0) {
-            if (v_fire <= 0) {
-                v_fire_sign = (v > 0 && y_even < 64) ? -1 : +1;
-            }
+            // if (v_fire <= 0) {
+            //     v_fire_sign = (v > 0 && y_even < 64) ? -1 : +1;
+            // }
             v_fire = z_even;
         }
 
