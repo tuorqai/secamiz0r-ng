@@ -243,21 +243,12 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
     int r_even = rand();
     int r_odd = rand();
 
-    int y_even_prev = even[0];
-    int y_odd_prev = odd[0];
-
     int y_even_oscillation = 0;
     int y_odd_oscillation = 0;
 
-    for (int i = self->width - 1; i >= 0; i--) {
-        int y_even = even[i * 4 + 0];
-        int y_odd = odd[i * 4 + 0];
-
-        int u_fire = 0;
-        int v_fire = 0;
-
-        y_even_oscillation += abs(y_even - y_even_prev - umod(r_even, 512));
-        y_odd_oscillation += abs(y_odd - y_odd_prev - umod(r_odd, 512));
+    for (size_t i = 1; i < self->width; i++) {
+        y_even_oscillation += abs(even[i * 4 + 0] - even[i * 4 - 4] - umod(r_even, 512));
+        y_odd_oscillation += abs(odd[i * 4 + 0] - odd[i * 4 - 4] - umod(r_odd, 512));
 
         if (y_even_oscillation > self->fire_threshold) {
             even[i * 4 + 2] = umod(r_even, 80);
@@ -270,9 +261,6 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
         r_even = juice(r_even);
         r_odd = juice(r_odd);
 
-        y_even_prev = y_even;
-        y_odd_prev = y_odd;
-
         y_even_oscillation /= 2;
         y_odd_oscillation /= 2;
     }
@@ -280,8 +268,6 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 
 static void filter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
-    prefilter_pair(self, even, odd);
-
     int r_even = rand();
     int r_odd = rand();
 
@@ -407,6 +393,7 @@ void f0r_update(f0r_instance_t instance, double time, uint32_t const* src, uint3
         uint8_t *dst_odd = (uint8_t *) &dst[odd];
 
         copy_pair_as_yuv(self, dst_even, dst_odd, src_even, src_odd);
+        prefilter_pair(self, dst_even, dst_odd);
         filter_pair(self, dst_even, dst_odd);
         convert_pair_to_rgb(self, dst_even, dst_odd);
     }
