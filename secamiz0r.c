@@ -13,6 +13,7 @@ struct secamiz0r
 
     double fire_intensity;
     int fire_threshold;
+    int fire_seed;
 
     double noise_intensity;
     int luma_noise;
@@ -70,6 +71,7 @@ static void set_fire_intensity(struct secamiz0r *self, double fire_intensity)
     double const x = self->fire_intensity = fire_intensity;
 
     self->fire_threshold = 1024 - (int) (x * x * 256.0);
+    self->fire_seed = (int) (x * 1024.0);
 }
 
 static void set_noise_intensity(struct secamiz0r *self, double noise_intensity)
@@ -243,8 +245,8 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
     int r_even = rand();
     int r_odd = rand();
 
-    int y_even_oscillation = umod(r_even, (int) (self->fire_intensity * 1024.0));
-    int y_odd_oscillation = umod(r_odd, (int) (self->fire_intensity * 1024.0));
+    int y_even_oscillation = self->fire_seed ? umod(r_even, self->fire_seed) : 0;
+    int y_odd_oscillation = self->fire_seed ? umod(r_odd, self->fire_seed) : 0;
 
     for (size_t i = 1; i < self->width; i++) {
         y_even_oscillation += abs(even[i * 4 + 0] - even[i * 4 - 4] - umod(r_even, 512));
