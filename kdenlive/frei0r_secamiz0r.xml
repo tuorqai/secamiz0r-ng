@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<!DOCTYPE kpartgui>
+<effect tag="frei0r.secamiz0r" id="frei0r.secamiz0r">
+    <name>SECAMiz0r</name>
+    <description>Simulates SECAM fire effect</description>
+    <author>tuorqai</author>
+    <parameter type="animated" name="Fire intensity" default="0.125" min="0" max="1000" factor="1000">
+        <name>Fire intensity</name>
+    </parameter>
+    <parameter type="animated" name="Noise intensity" default="0.125" min="0" max="1000" factor="1000">
+        <name>Noise intensity</name>
+    </parameter>
+</effect>
