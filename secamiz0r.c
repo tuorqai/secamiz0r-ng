@@ -3,8 +3,6 @@
 #include <stdlib.h>
 #include "frei0r.h"
 
-// #define ENABLE_TIME_TEST
-
 struct secamiz0r
 {
     unsigned int width;
@@ -378,12 +376,6 @@ void f0r_update(f0r_instance_t instance, double time, uint32_t const* src, uint3
 {
     struct secamiz0r *self = instance;
 
-#ifdef ENABLE_TIME_TEST
-    double d = fmod(time, 10000.0) / 10000.0;
-    set_fire_intensity(self, d);
-    set_noise_intensity(self, d);
-#endif
-
     for (size_t i = 0; i < self->height; i += 2) {
         size_t even = (i + 0) * self->width;
         size_t odd = (i + 1) * self->width;
@@ -399,16 +391,6 @@ void f0r_update(f0r_instance_t instance, double time, uint32_t const* src, uint3
         filter_pair(self, dst_even, dst_odd);
         convert_pair_to_rgb(self, dst_even, dst_odd);
     }
-
-#ifdef ENABLE_TIME_TEST
-    int w = (int) floor(d * self->width);
-    for (int x = 0; x < w; x++) {
-        dst[(self->height - 8) * self->width + x] = 0xffffffff;
-        for (size_t y = (self->height - 7); y < self->height; y++) {
-            dst[y * self->width + x] = 0xffff0000;
-        }
-    }
-#endif
 
     self->frame_count++;
 }
