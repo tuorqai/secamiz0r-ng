@@ -337,6 +337,8 @@ static void copy_pair_as_yuv(struct secamiz0r *self, uint8_t *dst_even, uint8_t 
  * up difference between two pixels, halving the sum every step (it kinda fades
  * away). To make this more chaotic, we also add a random value. Then, if at
  * some point the sum is larger than a threshold value, we mark this pixel.
+ *
+ * (Addition: also take the blue-ish or cyan-ish areas into the account).
  */
 static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
@@ -347,8 +349,14 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
     int y_odd_oscillation = self->fire_seed ? umod(r_odd, self->fire_seed) : 0;
 
     for (size_t i = 1; i < self->width; i++) {
-        y_even_oscillation += abs(even[i * 4 + 0] - even[i * 4 - 4] - umod(r_even, 512));
-        y_odd_oscillation += abs(odd[i * 4 + 0] - odd[i * 4 - 4] - umod(r_odd, 512));
+        int even_luma_delta = even[i * 4 + 0] - even[i * 4 - 4];
+        int odd_luma_delta = odd[i * 4 + 0] - odd[i * 4 - 4];
+
+        int even_chroma_delta = 0; // *thinking emoji*
+        int odd_chroma_delta = (odd[i * 4 + 1] - even[i * 4 + 1]) / 2;
+
+        y_even_oscillation += abs(even_luma_delta - odd_chroma_delta - umod(r_even, 512));
+        y_odd_oscillation += abs(odd_luma_delta - even_chroma_delta - umod(r_odd, 512));
 
         if (y_even_oscillation > self->fire_threshold) {
             even[i * 4 + 2] = umod(r_even, 80);
