@@ -24,6 +24,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 #include "frei0r.h"
 
 /**
@@ -331,6 +332,36 @@ static void copy_pair_as_yuv(struct secamiz0r *self, uint8_t *dst_even, uint8_t 
 }
 
 /**
+ * Moves line back and forth.
+ */
+static void shift_line(struct secamiz0r *self, uint8_t *line, int shift)
+{
+    if (shift < 0) {
+        int nshift = -shift;
+
+        for (size_t i = 0; i < self->width - nshift; i++) {
+            // memcpy(&line[i * 4], &line[(i * 4) + (nshift * 4)], 4);
+            line[i * 4 + 0] = line[(i * 4) + (nshift * 4) + 0];
+        }
+
+        for (size_t i = self->width - nshift; i < self->width; i++) {
+            line[i * 4 + 0] = 0;
+            line[i * 4 + 1] = 128;
+        }
+    } else if (shift > 0) {
+        for (size_t i = self->width - 1; i >= shift; i--) {
+            // memcpy(&line[i * 4], &line[(i * 4) - (shift * 4)], 4);
+            line[i * 4 + 0] = line[(i * 4) - (shift * 4) + 0];
+        }
+
+        for (size_t i = 0; i < shift; i++) {
+            line[i * 4 + 0] = 0;
+            line[i * 4 + 1] = 128;
+        }
+    }
+}
+
+/**
  * Filtering Stage 2.1. The loop inside this function works on two consecutive
  * lines copied in Stage 1. It aims to detect areas where luminance level is
  * changed rapidly, and then marks those areas. To achieve this, we keep summing
@@ -339,6 +370,7 @@ static void copy_pair_as_yuv(struct secamiz0r *self, uint8_t *dst_even, uint8_t 
  * some point the sum is larger than a threshold value, we mark this pixel.
  *
  * (Addition: also take the blue-ish or cyan-ish areas into the account).
+ * (Addition: shift lines a few pixels to the side to simulate bad sync).
  */
 static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
 {
@@ -372,6 +404,14 @@ static void prefilter_pair(struct secamiz0r *self, uint8_t *even, uint8_t *odd)
         y_even_oscillation /= 2;
         y_odd_oscillation /= 2;
     }
+
+    // Addition: simulate bad deinterlace and bad sync.
+
+    int even_extra_shift = (self->luma_noise > 80) ? (r_even % 4) : 0;
+    int odd_extra_shift = (self->luma_noise > 80) ? (r_odd % 4) : 0;
+
+    shift_line(self, even, (self->frame_count % 2) + even_extra_shift);
+    shift_line(self, odd, !(self->frame_count % 2) + odd_extra_shift);
 }
 
 /**
